@@ -995,35 +995,47 @@ function renderHistory(){
   list();
 }
 
+let wishlistView = 'open';
 function renderWishlist(){
   const open = wishlist.filter(w => !w.done);
   const done = wishlist.filter(w => w.done);
 
   const rowHtml = (w) => {
-    const canDelete = isAdmin || w.requestedByUid === currentUid;
     return `
     <div class="movement-row">
       <div class="m-icon ${w.done ? 'in' : 'out'}">${w.done ? '✓' : '!'}</div>
       <div class="m-info">
         <div class="m-name">${escapeHtml(w.text)}${w.qty ? ' <span class="role-badge" style="border-color:var(--border);color:var(--text-muted);">' + escapeHtml(String(w.qty)) + '</span>' : ''}</div>
-        <div class="m-meta">${escapeHtml(w.requestedBy || '—')} · ${fmtDate(w.createdAt)}</div>
+        <div class="m-meta">${escapeHtml(w.requestedBy || '—')} · ${fmtDate(w.createdAt)}${w.done && w.doneAt ? ' · erledigt ' + fmtDate(w.doneAt) : ''}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
         ${(isAdmin && !w.done) ? `<button class="btn btn-secondary" data-done="${w.id}" style="padding:4px 10px;font-size:10.5px;">Erledigt</button>` : ''}
-        ${canDelete ? `<button class="btn btn-secondary" data-delwish="${w.id}" style="padding:4px 10px;font-size:10.5px;color:var(--danger);">Löschen</button>` : ''}
+        ${isAdmin ? `<button class="btn btn-secondary" data-delwish="${w.id}" style="padding:4px 10px;font-size:10.5px;color:var(--danger);">Löschen</button>` : ''}
       </div>
     </div>`;
   };
 
-  let html = `<h2 class="section-title">Offene Bestellungen (${open.length})</h2>`;
-  html += open.length ? open.map(rowHtml).join('') : `<div class="empty-state" style="padding:24px 10px;"><div class="disp">Keine offenen Eintr\u00e4ge</div>\u00dcber den + Button kannst du etwas hinzuf\u00fcgen, das im Lager fehlt.</div>`;
+  let html = `
+    <div class="filter-row">
+      <button class="chip-filter ${wishlistView==='open'?'active':''}" data-view="open">Offen (${open.length})</button>
+      <button class="chip-filter ${wishlistView==='done'?'active':''}" data-view="done">Erledigt (${done.length})</button>
+    </div>
+  `;
 
-  if(done.length){
-    html += `<h2 class="section-title" style="margin-top:22px;">Erledigt (${done.length})</h2>`;
-    html += done.map(rowHtml).join('');
+  if(wishlistView === 'open'){
+    html += open.length ? open.map(rowHtml).join('') : `<div class="empty-state" style="padding:24px 10px;"><div class="disp">Keine offenen Einträge</div>Über den + Button kannst du etwas hinzufügen, das im Lager fehlt.</div>`;
+  } else {
+    html += done.length ? done.map(rowHtml).join('') : `<div class="empty-state" style="padding:24px 10px;"><div class="disp">Noch nichts erledigt</div>Abgeschlossene Bestellungen erscheinen hier.</div>`;
   }
 
   main.innerHTML = html;
+
+  main.querySelectorAll('[data-view]').forEach(btn=>{
+    btn.onclick = ()=>{
+      wishlistView = btn.dataset.view;
+      renderWishlist();
+    };
+  });
 
   main.querySelectorAll('[data-done]').forEach(btn=>{
     btn.onclick = async ()=>{
