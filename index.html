@@ -606,7 +606,10 @@
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
       <div style="font-size:11px;color:var(--text-muted);" id="userLine"></div>
-      <button class="logout-link" id="logoutBtn">Abmelden</button>
+      <div style="display:flex;gap:12px;">
+        <button class="logout-link" id="changePwBtn">Passwort ändern</button>
+        <button class="logout-link" id="logoutBtn">Abmelden</button>
+      </div>
     </div>
   </header>
   <main id="main"></main>
@@ -648,7 +651,8 @@ import {
   onSnapshot, query, orderBy, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged
+  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
+  EmailAuthProvider, reauthenticateWithCredential, updatePassword
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // ---- Firebase-Konfiguration ----
@@ -733,6 +737,53 @@ $('#logoutBtn').addEventListener('click', async ()=>{
   if(unsubMovements) unsubMovements();
   await signOut(auth);
 });
+$('#changePwBtn').addEventListener('click', openChangePasswordSheet);
+
+function openChangePasswordSheet(){
+  const sheet = buildSheet(`
+    <div class="sheet-head"><h3>Passwort ändern</h3><button class="x" data-close>×</button></div>
+    <label>Aktuelles Passwort</label>
+    <input type="text" id="pw-current" placeholder="Aktuelles Passwort" style="-webkit-text-security:disc;">
+    <label>Neues Passwort</label>
+    <input type="text" id="pw-new" placeholder="Mind. 6 Zeichen" style="-webkit-text-security:disc;">
+    <label>Neues Passwort bestätigen</label>
+    <input type="text" id="pw-confirm" placeholder="Wiederholen" style="-webkit-text-security:disc;">
+    <div class="err" id="pw-err"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary btn-block" data-close>Abbrechen</button>
+      <button class="btn btn-primary btn-block" id="pw-save">Speichern</button>
+    </div>
+  `);
+  sheet.querySelector('#pw-save').onclick = async ()=>{
+    const btn = sheet.querySelector('#pw-save');
+    const errEl = sheet.querySelector('#pw-err');
+    errEl.textContent = '';
+    const current = sheet.querySelector('#pw-current').value;
+    const next = sheet.querySelector('#pw-new').value;
+    const confirm = sheet.querySelector('#pw-confirm').value;
+    if(!current || !next){ errEl.textContent = 'Bitte alle Felder ausfüllen.'; return; }
+    if(next.length < 6){ errEl.textContent = 'Neues Passwort braucht mindestens 6 Zeichen.'; return; }
+    if(next !== confirm){ errEl.textContent = 'Die beiden neuen Passwörter stimmen nicht überein.'; return; }
+    btn.disabled = true; btn.textContent = 'Speichere…';
+    try{
+      const cred = EmailAuthProvider.credential(auth.currentUser.email, current);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, next);
+      closeSheet();
+      toast('Passwort geändert');
+    }catch(e){
+      const map = {
+        'auth/wrong-password': 'Aktuelles Passwort ist falsch.',
+        'auth/invalid-credential': 'Aktuelles Passwort ist falsch.',
+        'auth/weak-password': 'Neues Passwort ist zu schwach (mind. 6 Zeichen).',
+        'auth/too-many-requests': 'Zu viele Versuche. Bitte kurz warten.'
+      };
+      errEl.textContent = map[e.code] || ('Fehlgeschlagen: ' + (e.code || e.message));
+      console.error(e);
+      btn.disabled = false; btn.textContent = 'Speichern';
+    }
+  };
+}
 
 // ---- Auth-Status & Rolle laden ----
 onAuthStateChanged(auth, async user => {
@@ -1965,6 +2016,7 @@ function openArticleDetail(id, justCreated){
       <div><div class="dlabel">Art. Nr. Händler</div><div class="dval">${escapeHtml(a.vendorArticleNumber||'—')}</div></div>
       <div><div class="dlabel">Preis</div><div class="dval">${a.price ? 'CHF ' + a.price.toFixed(2) : '—'}</div></div>
     </div>
+    ${(a.category||'').toLowerCase() === 'beschläge' ? `<button class="btn btn-secondary btn-block" id="vendorSiteBtn" style="margin-bottom:14px;">Beschläge bei Peterhans ansehen</button>` : ''}
     <label style="text-align:center;">Buchung</label>
     <div class="qty-stepper">
       <button data-step="-1">−</button>
@@ -2042,6 +2094,12 @@ function openArticleDetail(id, justCreated){
     closeSheet();
     openPrintImportedTagsSheet([{ id: a.id, data: { name: a.name } }]);
   };
+  const vendorBtn = sheet.querySelector('#vendorSiteBtn');
+  if(vendorBtn){
+    vendorBtn.onclick = ()=>{
+      window.open('https://www.peterhans-hwz.ch/?srv=sortiment&tenId=55', '_blank');
+    };
+  }
 
   try{
     new QRCode(sheet.querySelector('#qrHolder'), { text: a.id, width: 96, height: 96, colorDark:'#1b1d1f', colorLight:'#ffffff' });
